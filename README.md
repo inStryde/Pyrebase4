@@ -1,3 +1,8 @@
+Internal version of Pyrebase4 with a fix for file previews in the firebase console. This repo was created for archival purposes as inStrydeBackend does not currently use the storage put functionality and has been swapped back to the main repo to benefit from fixes/security fixes.
+
+
+
+
 # Pyrebase4
 
 A simple python wrapper for the [Firebase API](https://firebase.google.com).
