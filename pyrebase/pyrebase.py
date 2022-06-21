@@ -18,6 +18,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from gcloud import storage
 from requests.packages.urllib3.contrib.appengine import is_appengine_sandbox
 from requests_toolbelt.adapters import appengine
+from uuid import uuid4
 
 import python_jwt as jwt
 from Crypto.PublicKey import RSA
@@ -445,7 +446,7 @@ class Storage:
             self.path = new_path
         return self
 
-    def put(self, file, token=None):
+    def put(self, file, token=None, content_type="image/png"):
         # reset path
         path = self.path
         self.path = None
@@ -461,10 +462,23 @@ class Storage:
             return request_object.json()
         elif self.credentials:
             blob = self.bucket.blob(path)
+
+            # Changed by Griffith Baker - Added metadata to enable file previews in console
+            # Create new token
+            new_token = str(uuid4())
+            # Create new dictionary with the metadata and set metadata to blob
+            metadata = {"firebaseStorageDownloadTokens": new_token}
+            blob.metadata = metadata
+            print(blob.metadata)
             if isinstance(file, str):
-                return blob.upload_from_filename(filename=file)
+                return blob.upload_from_filename(filename=file, content_type=content_type)
             else:
-                return blob.upload_from_file(file_obj=file)
+                #Changed by Griffith Baker - fixes file upload for PIL png files
+                #return blob.upload_from_file(file_obj=file)
+                blob.upload_from_string(file)
+                blob.content_type = content_type
+                blob.metadata = metadata
+                blob.patch()
         else:
             request_object = self.requests.post(request_ref, data=file_object)
             raise_detailed_error(request_object)
