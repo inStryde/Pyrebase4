@@ -16,8 +16,6 @@ import threading
 import socket
 from oauth2client.service_account import ServiceAccountCredentials
 from gcloud import storage
-from urllib3.contrib.appengine import is_appengine_sandbox
-from requests_toolbelt.adapters import appengine
 from uuid import uuid4
 
 import python_jwt as jwt
@@ -49,13 +47,7 @@ class Firebase:
                 self.credentials = ServiceAccountCredentials.from_json_keyfile_name(config["serviceAccount"], scopes)
             if service_account_type is dict:
                 self.credentials = ServiceAccountCredentials.from_json_keyfile_dict(config["serviceAccount"], scopes)
-        if is_appengine_sandbox():
-            # Fix error in standard GAE environment
-            # is releated to https://github.com/kennethreitz/requests/issues/3187
-            # ProtocolError('Connection aborted.', error(13, 'Permission denied'))
-            adapter = appengine.AppEngineAdapter(max_retries=3)
-        else:
-            adapter = requests.adapters.HTTPAdapter(max_retries=3)
+        adapter = requests.adapters.HTTPAdapter(max_retries=3)
 
         for scheme in ('http://', 'https://'):
             self.requests.mount(scheme, adapter)
