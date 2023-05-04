@@ -21,6 +21,7 @@ setup(
         'gcloud>=0.18.3',
         'oauth2client>=4.1.2',
         'python-jwt>=2.0.1',
-        'pycryptodome>=3.6.4'
+        'pycryptodome>=3.6.4',
+        'urllib3>=2.0.2'
     ]
 )
