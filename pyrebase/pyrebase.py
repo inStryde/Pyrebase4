@@ -16,8 +16,6 @@ import threading
 import socket
 from oauth2client.service_account import ServiceAccountCredentials
 from gcloud import storage
-from requests.packages.urllib3.contrib.appengine import is_appengine_sandbox
-from requests_toolbelt.adapters import appengine
 from uuid import uuid4
 
 import python_jwt as jwt
@@ -49,13 +47,7 @@ class Firebase:
                 self.credentials = ServiceAccountCredentials.from_json_keyfile_name(config["serviceAccount"], scopes)
             if service_account_type is dict:
                 self.credentials = ServiceAccountCredentials.from_json_keyfile_dict(config["serviceAccount"], scopes)
-        if is_appengine_sandbox():
-            # Fix error in standard GAE environment
-            # is releated to https://github.com/kennethreitz/requests/issues/3187
-            # ProtocolError('Connection aborted.', error(13, 'Permission denied'))
-            adapter = appengine.AppEngineAdapter(max_retries=3)
-        else:
-            adapter = requests.adapters.HTTPAdapter(max_retries=3)
+        adapter = requests.adapters.HTTPAdapter(max_retries=3)
 
         for scheme in ('http://', 'https://'):
             self.requests.mount(scheme, adapter)
@@ -388,41 +380,50 @@ class Database:
         return PyreResponse(convert_to_pyre(data), origin.key())
 
     def get_etag(self, token=None, json_kwargs={}):
-         request_ref = self.build_request_url(token)
-         headers = self.build_headers(token)
-         # extra header to get ETag
-         headers['X-Firebase-ETag'] = 'true'
-         request_object = self.requests.get(request_ref, headers=headers)
-         raise_detailed_error(request_object)
-         return request_object.headers['ETag']
+        request_ref = self.build_request_url(token)
+        headers = self.build_headers(token)
+        # extra header to get ETag
+        headers['X-Firebase-ETag'] = 'true'
+        request_object = self.requests.get(request_ref, headers=headers)
+        raise_detailed_error(request_object)
+        return {
+           'ETag': request_object.headers['ETag'],
+           'value': request_object.json()
+        }
 
     def conditional_set(self, data, etag, token=None, json_kwargs={}):
-         request_ref = self.check_token(self.database_url, self.path, token)
-         self.path = ""
-         headers = self.build_headers(token)
-         headers['if-match'] = etag
-         request_object = self.requests.put(request_ref, headers=headers, data=json.dumps(data, **json_kwargs).encode("utf-8"))
+        request_ref = self.check_token(self.database_url, self.path, token)
+        self.path = ""
+        headers = self.build_headers(token)
+        headers['if-match'] = etag
+        request_object = self.requests.put(request_ref, headers=headers, data=json.dumps(data, **json_kwargs).encode("utf-8"))
 
-         # ETag didn't match, so we should return the correct one for the user to try again
-         if request_object.status_code == 412:
-             return {'ETag': request_object.headers['ETag']}
+        # ETag didn't match, so we should return the correct one for the user to try again
+        if request_object.status_code == 412:
+            return {
+               'ETag': request_object.headers['ETag'],
+               'value': request_object.json()
+            }
 
-         raise_detailed_error(request_object)
-         return request_object.json()
+        raise_detailed_error(request_object)
+        return request_object.json()
 
     def conditional_remove(self, etag, token=None):
-         request_ref = self.check_token(self.database_url, self.path, token)
-         self.path = ""
-         headers = self.build_headers(token)
-         headers['if-match'] = etag
-         request_object = self.requests.delete(request_ref, headers=headers)
+        request_ref = self.check_token(self.database_url, self.path, token)
+        self.path = ""
+        headers = self.build_headers(token)
+        headers['if-match'] = etag
+        request_object = self.requests.delete(request_ref, headers=headers)
 
-         # ETag didn't match, so we should return the correct one for the user to try again
-         if request_object.status_code == 412:
-             return {'ETag': request_object.headers['ETag']}
+        # ETag didn't match, so we should return the correct one for the user to try again
+        if request_object.status_code == 412:
+            return {
+               'ETag': request_object.headers['ETag'],
+               'value': request_object.json()
+            }
 
-         raise_detailed_error(request_object)
-         return request_object.json()
+        raise_detailed_error(request_object)
+        return request_object.json()
 
 
 class Storage:
@@ -446,7 +447,7 @@ class Storage:
             self.path = new_path
         return self
 
-    def put(self, file, token=None, content_type="image/png"):
+    def put(self, file, token=None, content_type=None):
         # reset path
         path = self.path
         self.path = None
@@ -463,21 +464,15 @@ class Storage:
         elif self.credentials:
             blob = self.bucket.blob(path)
 
-            # Changed by Griffith Baker - Added metadata to enable file previews in console
-            # Create new token
-            new_token = str(uuid4())
-            # Create new dictionary with the metadata and set metadata to blob
-            metadata = {"firebaseStorageDownloadTokens": new_token}
-            blob.metadata = metadata
-            print(blob.metadata)
+            # Add metadata to enable file previews in console
+            blob.metadata = {"firebaseStorageDownloadTokens": str(uuid4())}
             if isinstance(file, str):
                 return blob.upload_from_filename(filename=file, content_type=content_type)
             else:
-                #Changed by Griffith Baker - fixes file upload for PIL png files
-                #return blob.upload_from_file(file_obj=file)
+                # If the file is not a string we need to patch the blob after upload to set the content type
                 blob.upload_from_string(file)
-                blob.content_type = content_type
-                blob.metadata = metadata
+                if content_type:
+                    blob.content_type = content_type
                 blob.patch()
         else:
             request_object = self.requests.post(request_ref, data=file_object)
