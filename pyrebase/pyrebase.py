@@ -467,7 +467,7 @@ class Storage:
             # Add metadata to enable file previews in console
             blob.metadata = {"firebaseStorageDownloadTokens": str(uuid4())}
             if isinstance(file, str):
-                return blob.upload_from_filename(filename=file)
+                return blob.upload_from_filename(filename=file, content_type=content_type)
             else:
                 # If the file is not a string we need to patch the blob after upload to set the content type
                 blob.upload_from_string(file)
